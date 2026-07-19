@@ -17,20 +17,20 @@ Along the way it runs sales tools (lead scoring, product knowledge search, propo
 - Manager dashboard with funnel, heatmap, deals, meetings, sync console
 - Works without an API key (deterministic agent). Optional OpenAI polish if configured.
 
-## Quick start
+## Live demo
+
+| | |
+|---|---|
+| **Live app** | [https://closepath-ai.vercel.app](https://closepath-ai.vercel.app) |
+| **Local** | [http://localhost:3010](http://localhost:3010) |
+| **Dashboard** | `/dashboard` |
 
 ```bash
 cd Project
 npm install
 npm run dev
+# → http://localhost:3010
 ```
-
-Open [http://localhost:3010](http://localhost:3010)
-
-| Surface | Path |
-|---|---|
-| Sales floor | `/` |
-| Manager dashboard | `/dashboard` |
 
 Dev server uses port **3010** by default.
 

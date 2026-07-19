@@ -9,22 +9,54 @@ import type {
   SessionState,
 } from "./types";
 
-const DATA_DIR = path.join(process.cwd(), ".data");
+/**
+ * Local: ./.data
+ * Vercel/serverless: /tmp (only writable path on Lambda)
+ */
+function resolveDataDir(): string {
+  if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    return path.join("/tmp", "closepath-data");
+  }
+  return path.join(process.cwd(), ".data");
+}
+
+const DATA_DIR = resolveDataDir();
 const SESSIONS_FILE = path.join(DATA_DIR, "sessions.json");
 const DEALS_FILE = path.join(DATA_DIR, "deals.json");
 const MEETINGS_FILE = path.join(DATA_DIR, "meetings.json");
 const OPS_FILE = path.join(DATA_DIR, "ops.json");
 
+/** In-memory fallback if disk writes fail (rare). */
+const memory = {
+  sessions: {} as Record<string, SessionState>,
+  deals: [] as Deal[],
+  meetings: [] as Meeting[],
+  ops: [] as CrmOp[],
+  useMemory: false,
+};
+
 function ensureStore() {
-  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-  if (!existsSync(SESSIONS_FILE)) writeFileSync(SESSIONS_FILE, "{}");
-  if (!existsSync(DEALS_FILE)) writeFileSync(DEALS_FILE, "[]");
-  if (!existsSync(MEETINGS_FILE)) writeFileSync(MEETINGS_FILE, "[]");
-  if (!existsSync(OPS_FILE)) writeFileSync(OPS_FILE, "[]");
+  if (memory.useMemory) return;
+  try {
+    if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+    if (!existsSync(SESSIONS_FILE)) writeFileSync(SESSIONS_FILE, "{}");
+    if (!existsSync(DEALS_FILE)) writeFileSync(DEALS_FILE, "[]");
+    if (!existsSync(MEETINGS_FILE)) writeFileSync(MEETINGS_FILE, "[]");
+    if (!existsSync(OPS_FILE)) writeFileSync(OPS_FILE, "[]");
+  } catch {
+    memory.useMemory = true;
+  }
 }
 
 function readJson<T>(file: string, fallback: T): T {
   ensureStore();
+  if (memory.useMemory) {
+    if (file === SESSIONS_FILE) return memory.sessions as T;
+    if (file === DEALS_FILE) return memory.deals as T;
+    if (file === MEETINGS_FILE) return memory.meetings as T;
+    if (file === OPS_FILE) return memory.ops as T;
+    return fallback;
+  }
   try {
     return JSON.parse(readFileSync(file, "utf8")) as T;
   } catch {
@@ -34,7 +66,19 @@ function readJson<T>(file: string, fallback: T): T {
 
 function writeJson(file: string, data: unknown) {
   ensureStore();
-  writeFileSync(file, JSON.stringify(data, null, 2));
+  if (memory.useMemory) {
+    if (file === SESSIONS_FILE) memory.sessions = data as Record<string, SessionState>;
+    if (file === DEALS_FILE) memory.deals = data as Deal[];
+    if (file === MEETINGS_FILE) memory.meetings = data as Meeting[];
+    if (file === OPS_FILE) memory.ops = data as CrmOp[];
+    return;
+  }
+  try {
+    writeFileSync(file, JSON.stringify(data, null, 2));
+  } catch {
+    memory.useMemory = true;
+    writeJson(file, data);
+  }
 }
 
 export function appendOp(action: string, detail: string) {
