@@ -307,10 +307,13 @@ export default function SalesWorkspace() {
   const pulseStartedAt = useRef(0);
   const celebrated = useRef<string | null>(null);
 
-  async function startSession() {
+  async function startSession(options?: { resetCrm?: boolean }) {
     setError("");
     setShowProposal(false);
     celebrated.current = null;
+    if (options?.resetCrm) {
+      await fetch("/api/analytics", { method: "DELETE" }).catch(() => {});
+    }
     const res = await fetch("/api/session", { method: "POST" });
     const data = await res.json();
     if (!res.ok) {
@@ -322,7 +325,7 @@ export default function SalesWorkspace() {
   }
 
   useEffect(() => {
-    startSession();
+    startSession({ resetCrm: false });
     void fetch("/api/polish")
       .then((r) => r.json())
       .then((d) => setLlmReady(Boolean(d.configured)))
@@ -352,12 +355,21 @@ export default function SalesWorkspace() {
     setShowProposal(true);
     void import("canvas-confetti").then((mod) => {
       const confetti = mod.default;
-      confetti({
-        particleCount: 110,
-        spread: 70,
-        origin: { y: 0.65 },
-        colors: ["#8fce4a", "#1f5c32", "#f5f8f4", "#101916"],
-      });
+      const colors = ["#8fce4a", "#1f5c32", "#f5f8f4", "#101916"];
+      // Burst for ~2.2s so it shows clearly on demo recordings
+      confetti({ particleCount: 120, spread: 80, origin: { y: 0.6 }, colors });
+      window.setTimeout(() => {
+        confetti({ particleCount: 80, angle: 60, spread: 70, origin: { x: 0, y: 0.7 }, colors });
+      }, 400);
+      window.setTimeout(() => {
+        confetti({ particleCount: 80, angle: 120, spread: 70, origin: { x: 1, y: 0.7 }, colors });
+      }, 800);
+      window.setTimeout(() => {
+        confetti({ particleCount: 100, spread: 100, origin: { y: 0.55 }, colors });
+      }, 1400);
+      window.setTimeout(() => {
+        confetti({ particleCount: 60, spread: 90, origin: { y: 0.5 }, colors });
+      }, 2000);
     });
   }, [session]);
 
@@ -449,7 +461,13 @@ export default function SalesWorkspace() {
               <button
                 type="button"
                 onClick={polishWithGemini}
-                disabled={!session || !llmReady || polishing || pending}
+                disabled={
+                  !session ||
+                  !llmReady ||
+                  polishing ||
+                  pending ||
+                  session.messages.filter((m) => m.role === "assistant").length < 2
+                }
                 title={
                   llmReady
                     ? "Rewrite the last reply with Gemini (uses API only on click)"
@@ -461,10 +479,18 @@ export default function SalesWorkspace() {
               </button>
               <button
                 type="button"
-                onClick={startSession}
+                onClick={() => startSession({ resetCrm: false })}
                 className="rounded-full border border-[var(--line)] px-4 py-2 text-sm text-[var(--ink)] transition hover:bg-[var(--wash)]"
               >
                 New lead
+              </button>
+              <button
+                type="button"
+                onClick={() => startSession({ resetCrm: true })}
+                title="Clear CRM counters and start a fresh lead (use before recording)"
+                className="rounded-full border border-[var(--line)] px-4 py-2 text-sm text-[var(--muted)] transition hover:bg-[var(--wash)] hover:text-[var(--ink)]"
+              >
+                Reset demo
               </button>
             </div>
           </header>

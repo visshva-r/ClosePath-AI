@@ -4,6 +4,7 @@ import {
   computeLeadScore,
   emptyProfile,
   emptyScore,
+  isDeclineIntent,
   nextStage,
 } from "./scoring";
 import {
@@ -77,6 +78,9 @@ function nextBusinessSlot(): string {
 }
 
 function extractProfile(prev: LeadProfile, text: string): LeadProfile {
+  // Never mine entities from decline / opt-out messages
+  if (isDeclineIntent(text)) return prev;
+
   const profile: LeadProfile = {
     ...prev,
     painPoints: [...prev.painPoints],
@@ -84,10 +88,20 @@ function extractProfile(prev: LeadProfile, text: string): LeadProfile {
   const t = text.trim();
 
   // Name patterns: "I'm Alex", "I am Priya", "this is Sam"
+  // Reject phrases like "I'm not interested"
   const nameMatch = t.match(
     /(?:i'?m|i am|this is|my name is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i
   );
-  if (nameMatch) profile.name = nameMatch[1];
+  if (nameMatch) {
+    const candidate = nameMatch[1].trim();
+    const blocked =
+      /^(not|no|yes|interested|interested yet|sure|good|fine|okay|ok)\b/i.test(
+        candidate
+      ) || isDeclineIntent(candidate);
+    if (!blocked && candidate.length >= 2) {
+      profile.name = candidate;
+    }
+  }
 
   // Company: "at Stripe", "from Razorpay", "company is Acme"
   const companyMatch = t.match(
@@ -341,9 +355,11 @@ function craftReply(
     }
     case "qualification":
       return `Lead score update for **${company}**: **${score.total}/100** (${score.tier.toUpperCase()}).\n\nBreakdown - Budget ${score.budget}/25 | Authority ${score.authority}/25 | Need ${score.need}/25 | Timeline ${score.timeline}/25.\n\n${
-        score.total >= 40
+        score.total >= 40 && score.budget > 0 && score.timeline > 0
           ? "You're in a strong buying zone. Want me to pitch the best-fit Atlas plan with ROI proof?"
-          : "We're still light on budget/timeline. Share those and I can sharpen the recommendation."
+          : score.total >= 40
+            ? "Need looks real. Share budget band and timeline and I can pitch the best-fit Atlas plan."
+            : "We're still light on budget/timeline. Share those and I can sharpen the recommendation."
       }`;
     case "pitch": {
       const planLine = proposal || "Growth @ $3999/mo";
@@ -375,7 +391,7 @@ function craftReply(
     case "won":
       return `Great${name} - you're in.\n\nMeeting: ${meeting || "Pilot kickoff scheduled"}\nDeal: ${deal || "Created in pipeline"}\n\nA NexusOps FinOps architect will join with a waste heatmap for ${company}. Looking forward to the kickoff.`;
     case "lost":
-      return `No problem${name} - I'll pause outreach.\n\nIf cloud spend spikes later, ClosePath can reopen with a fresh waste scan. Good luck with ${company}.`;
+      return `Understood${name} - I'll close this lead and stop outreach.\n\nIf priorities change later, ClosePath can reopen with a fresh cloud waste scan for ${company}. Thanks for your time.`;
     default:
       return `Thanks${name}. Tell me about ${company}'s cloud setup and I'll guide the next best step.`;
   }
@@ -406,6 +422,33 @@ export async function handleUserMessage(
   };
 
   push("extract", `Ingested prospect message (${userText.slice(0, 64)}...)`);
+
+  if (isDeclineIntent(userText)) {
+    session.stage = "lost";
+    push("route", `Route ${prevStage.toUpperCase()} → LOST (decline intent)`);
+    push("decision", "Prospect opted out - close lead, skip entity mining");
+    const content = craftReply(session, "lost", userText, []);
+    const assistantMsg: ChatMessage = {
+      id: id(),
+      role: "assistant",
+      content,
+      at: now(),
+      meta: {
+        stage: "lost",
+        toolsUsed: ["stage_sync"],
+        score: session.score,
+        reasoner,
+      },
+    };
+    session.messages.push(assistantMsg);
+    session.updatedAt = now();
+    saveSession(session);
+    appendOp(
+      "stage_sync",
+      `${session.profile.company || "Lead"} → lost | decline`
+    );
+    return { session, toolsUsed: ["stage_sync"] };
+  }
 
   session.profile = extractProfile(session.profile, userText);
   session.score = computeLeadScore(session.profile);

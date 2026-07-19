@@ -79,6 +79,24 @@ export function computeLeadScore(profile: LeadProfile): LeadScore {
   return { budget, authority, need, timeline, total, tier };
 }
 
+export function isDeclineIntent(userText: string): boolean {
+  const text = userText.toLowerCase().trim();
+  if (!text) return false;
+  return (
+    /\bnot interested\b/.test(text) ||
+    /\bnot now\b/.test(text) ||
+    /\bno thanks\b/.test(text) ||
+    /\bno thank you\b/.test(text) ||
+    /\bno interest\b/.test(text) ||
+    /\bpass(?:\s+for now)?\b/.test(text) ||
+    /\bdecline\b/.test(text) ||
+    /\bunsubscribe\b/.test(text) ||
+    /\bstop (?:messaging|contacting|emailing)\b/.test(text) ||
+    text === "stop" ||
+    text === "no"
+  );
+}
+
 export function nextStage(
   current: SalesStage,
   profile: LeadProfile,
@@ -87,13 +105,13 @@ export function nextStage(
 ): SalesStage {
   const text = userText.toLowerCase();
 
-  if (
-    text.includes("not interested") ||
-    text.includes("no thanks") ||
-    text.includes("stop") ||
-    text.includes("unsubscribe")
-  ) {
+  if (isDeclineIntent(userText)) {
     return "lost";
+  }
+
+  // Already closed outcomes stay put
+  if (current === "won" || current === "lost") {
+    return current;
   }
 
   const closeSignals =
