@@ -9,10 +9,34 @@ import type {
   SessionState,
 } from "./types";
 
+type MemoryStore = {
+  sessions: Record<string, SessionState>;
+  deals: Deal[];
+  meetings: Meeting[];
+  ops: CrmOp[];
+};
+
 /**
- * Local: ./.data
- * Vercel/serverless: /tmp (only writable path on Lambda)
+ * Primary store is process memory (globalThis) so warm serverless
+ * invocations share state. Disk is best-effort only.
+ * Client also rehydrates sessions across cold starts / other instances.
  */
+function bag(): MemoryStore {
+  const g = globalThis as typeof globalThis & {
+    __closepathStore?: MemoryStore;
+  };
+  if (!g.__closepathStore) {
+    g.__closepathStore = {
+      sessions: {},
+      deals: [],
+      meetings: [],
+      ops: [],
+    };
+    hydrateFromDisk(g.__closepathStore);
+  }
+  return g.__closepathStore;
+}
+
 function resolveDataDir(): string {
   if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
     return path.join("/tmp", "closepath-data");
@@ -26,102 +50,128 @@ const DEALS_FILE = path.join(DATA_DIR, "deals.json");
 const MEETINGS_FILE = path.join(DATA_DIR, "meetings.json");
 const OPS_FILE = path.join(DATA_DIR, "ops.json");
 
-/** In-memory fallback if disk writes fail (rare). */
-const memory = {
-  sessions: {} as Record<string, SessionState>,
-  deals: [] as Deal[],
-  meetings: [] as Meeting[],
-  ops: [] as CrmOp[],
-  useMemory: false,
-};
-
-function ensureStore() {
-  if (memory.useMemory) return;
+function ensureDisk() {
   try {
     if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
-    if (!existsSync(SESSIONS_FILE)) writeFileSync(SESSIONS_FILE, "{}");
-    if (!existsSync(DEALS_FILE)) writeFileSync(DEALS_FILE, "[]");
-    if (!existsSync(MEETINGS_FILE)) writeFileSync(MEETINGS_FILE, "[]");
-    if (!existsSync(OPS_FILE)) writeFileSync(OPS_FILE, "[]");
   } catch {
-    memory.useMemory = true;
+    // ignore on read-only FS
   }
 }
 
-function readJson<T>(file: string, fallback: T): T {
-  ensureStore();
-  if (memory.useMemory) {
-    if (file === SESSIONS_FILE) return memory.sessions as T;
-    if (file === DEALS_FILE) return memory.deals as T;
-    if (file === MEETINGS_FILE) return memory.meetings as T;
-    if (file === OPS_FILE) return memory.ops as T;
-    return fallback;
-  }
+function readDisk<T>(file: string, fallback: T): T {
   try {
+    ensureDisk();
+    if (!existsSync(file)) return fallback;
     return JSON.parse(readFileSync(file, "utf8")) as T;
   } catch {
     return fallback;
   }
 }
 
-function writeJson(file: string, data: unknown) {
-  ensureStore();
-  if (memory.useMemory) {
-    if (file === SESSIONS_FILE) memory.sessions = data as Record<string, SessionState>;
-    if (file === DEALS_FILE) memory.deals = data as Deal[];
-    if (file === MEETINGS_FILE) memory.meetings = data as Meeting[];
-    if (file === OPS_FILE) memory.ops = data as CrmOp[];
-    return;
-  }
+function writeDisk(file: string, data: unknown) {
   try {
+    ensureDisk();
     writeFileSync(file, JSON.stringify(data, null, 2));
   } catch {
-    memory.useMemory = true;
-    writeJson(file, data);
+    // best-effort only
   }
 }
 
+function hydrateFromDisk(store: MemoryStore) {
+  const sessions = readDisk<Record<string, SessionState>>(SESSIONS_FILE, {});
+  const deals = readDisk<Deal[]>(DEALS_FILE, []);
+  const meetings = readDisk<Meeting[]>(MEETINGS_FILE, []);
+  const ops = readDisk<CrmOp[]>(OPS_FILE, []);
+  store.sessions = { ...sessions, ...store.sessions };
+  if (store.deals.length === 0) store.deals = deals;
+  if (store.meetings.length === 0) store.meetings = meetings;
+  if (store.ops.length === 0) store.ops = ops;
+}
+
+function persistAll() {
+  const store = bag();
+  writeDisk(SESSIONS_FILE, store.sessions);
+  writeDisk(DEALS_FILE, store.deals);
+  writeDisk(MEETINGS_FILE, store.meetings);
+  writeDisk(OPS_FILE, store.ops);
+}
+
 export function appendOp(action: string, detail: string) {
-  const ops = readJson<CrmOp[]>(OPS_FILE, []);
-  ops.unshift({
+  const store = bag();
+  store.ops.unshift({
     id: crypto.randomUUID(),
     at: new Date().toISOString(),
     action,
     detail,
   });
-  writeJson(OPS_FILE, ops.slice(0, 40));
+  store.ops = store.ops.slice(0, 40);
+  persistAll();
 }
 
 export function listOps(): CrmOp[] {
-  return readJson<CrmOp[]>(OPS_FILE, []);
+  return [...bag().ops];
 }
 
 export function getSession(id: string): SessionState | null {
-  const all = readJson<Record<string, SessionState>>(SESSIONS_FILE, {});
-  return all[id] ?? null;
+  return bag().sessions[id] ?? null;
 }
 
 export function saveSession(session: SessionState) {
-  const all = readJson<Record<string, SessionState>>(SESSIONS_FILE, {});
-  all[session.id] = session;
-  writeJson(SESSIONS_FILE, all);
+  bag().sessions[session.id] = session;
+  persistAll();
+}
+
+/** Restore a client-held session snapshot (needed on Vercel multi-instance). */
+export function restoreSession(snapshot: SessionState): SessionState {
+  if (!snapshot?.id) {
+    throw new Error("Invalid session snapshot");
+  }
+  const normalized: SessionState = {
+    ...snapshot,
+    profile: snapshot.profile || { painPoints: [] },
+    score: snapshot.score || {
+      budget: 0,
+      authority: 0,
+      need: 0,
+      timeline: 0,
+      total: 0,
+      tier: "cold",
+    },
+    objections: snapshot.objections || [],
+    messages: snapshot.messages || [],
+    reasoner: snapshot.reasoner || [],
+  };
+  saveSession(normalized);
+  return normalized;
+}
+
+export function getOrRestoreSession(
+  sessionId: string,
+  snapshot?: SessionState | null
+): SessionState | null {
+  const existing = getSession(sessionId);
+  if (existing) return existing;
+  if (snapshot && snapshot.id === sessionId) {
+    return restoreSession(snapshot);
+  }
+  return null;
 }
 
 export function listSessions(): SessionState[] {
-  const all = readJson<Record<string, SessionState>>(SESSIONS_FILE, {});
-  return Object.values(all).sort(
+  return Object.values(bag().sessions).sort(
     (a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt)
   );
 }
 
 export function listDeals(): Deal[] {
-  return readJson<Deal[]>(DEALS_FILE, []);
+  return [...bag().deals];
 }
 
 export function saveDeal(deal: Deal) {
-  const deals = listDeals().filter((d) => d.id !== deal.id);
-  deals.push(deal);
-  writeJson(DEALS_FILE, deals);
+  const store = bag();
+  store.deals = store.deals.filter((d) => d.id !== deal.id);
+  store.deals.push(deal);
+  persistAll();
   appendOp(
     "create_deal",
     `${deal.company} | ${deal.plan} | $${deal.value.toLocaleString()}/yr ACV`
@@ -129,13 +179,14 @@ export function saveDeal(deal: Deal) {
 }
 
 export function listMeetings(): Meeting[] {
-  return readJson<Meeting[]>(MEETINGS_FILE, []);
+  return [...bag().meetings];
 }
 
 export function saveMeeting(meeting: Meeting) {
-  const meetings = listMeetings().filter((m) => m.id !== meeting.id);
-  meetings.push(meeting);
-  writeJson(MEETINGS_FILE, meetings);
+  const store = bag();
+  store.meetings = store.meetings.filter((m) => m.id !== meeting.id);
+  store.meetings.push(meeting);
+  persistAll();
   appendOp(
     "book_meeting",
     `${meeting.withName} @ ${meeting.company} → ${meeting.slot}`
@@ -143,10 +194,12 @@ export function saveMeeting(meeting: Meeting) {
 }
 
 export function clearCrmData() {
-  writeJson(SESSIONS_FILE, {});
-  writeJson(DEALS_FILE, []);
-  writeJson(MEETINGS_FILE, []);
-  writeJson(OPS_FILE, []);
+  const store = bag();
+  store.sessions = {};
+  store.deals = [];
+  store.meetings = [];
+  store.ops = [];
+  persistAll();
   appendOp("reset_crm", "Demo CRM wiped for clean recording");
 }
 

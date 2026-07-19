@@ -370,7 +370,11 @@ export default function SalesWorkspace() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: session.id, message: optimistic }),
+        body: JSON.stringify({
+          sessionId: session.id,
+          message: optimistic,
+          session,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -378,6 +382,12 @@ export default function SalesWorkspace() {
         return;
       }
       setSession(data.session);
+      // Best-effort dashboard sync on Vercel multi-instance
+      void fetch("/api/analytics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session: data.session }),
+      }).catch(() => {});
     });
   }
 
@@ -396,7 +406,7 @@ export default function SalesWorkspace() {
       const res = await fetch("/api/polish", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: session.id }),
+        body: JSON.stringify({ sessionId: session.id, session }),
       });
       const data = await res.json();
       if (!res.ok) {
