@@ -1,65 +1,98 @@
-import Image from "next/image";
+import Link from "next/link";
+import SalesWorkspace from "@/components/SalesWorkspace";
 
-export default function Home() {
+export default function HomePage() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <main className="relative flex-1 overflow-hidden">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[70vh] bg-[radial-gradient(ellipse_at_top,_rgba(159,212,90,0.22),_transparent_60%)]" />
+
+      <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between px-6 pt-8">
+        <Link href="/" className="font-display text-2xl text-[var(--ink)]">
+          ClosePath
+        </Link>
+        <nav className="flex items-center gap-4 text-sm">
+          <Link
+            href="/dashboard"
+            className="text-[var(--muted)] transition hover:text-[var(--ink)]"
+          >
+            Manager dashboard
+          </Link>
+          <a
+            href="#floor"
+            className="rounded-full bg-[var(--ink)] px-4 py-2 text-[var(--paper)]"
+          >
+            Open sales floor
+          </a>
+        </nav>
+      </header>
+
+      <section className="relative z-10 mx-auto grid w-full max-w-6xl gap-10 px-6 pb-16 pt-16 lg:grid-cols-[1.15fr_0.85fr] lg:items-end lg:pt-24">
+        <div>
+          <p className="font-display text-5xl leading-[0.95] text-[var(--ink)] sm:text-6xl lg:text-7xl">
+            ClosePath
           </p>
+          <h1 className="mt-5 max-w-xl text-xl leading-snug text-[var(--ink)] sm:text-2xl">
+            Multi-agent sales assistant that qualifies, pitches, closes, and
+            writes CRM records for you.
+          </h1>
+          <p className="mt-4 max-w-lg text-[var(--muted)]">
+            Staged B2B sales workflow with BANT scoring, objection handling,
+            proposals, meeting booking, and a live manager dashboard.
+          </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <a
+              href="#floor"
+              className="rounded-full bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-[var(--ink)] transition hover:brightness-110"
+            >
+              Try the live agent
+            </a>
+            <Link
+              href="/dashboard"
+              className="rounded-full border border-[var(--line)] bg-[var(--panel)]/70 px-5 py-3 text-sm text-[var(--ink)] backdrop-blur"
+            >
+              View pipeline intel
+            </Link>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+        <div className="relative min-h-[280px] overflow-hidden rounded-[2rem] border border-[var(--line)] bg-[linear-gradient(145deg,#1a2a22_0%,#24352c_45%,#3d5a36_100%)] p-6 text-[var(--paper)] shadow-[0_40px_100px_-50px_rgba(20,32,28,0.8)]">
+          <div className="absolute -right-8 -top-8 h-40 w-40 rounded-full bg-[var(--accent)]/30 blur-3xl" />
+          <p className="text-xs uppercase tracking-[0.22em] text-[var(--accent)]">
+            Agent graph
+          </p>
+          <ul className="relative mt-6 space-y-3 font-display text-2xl">
+            {[
+              "Discover pain",
+              "Score BANT",
+              "Pitch Atlas Cloud",
+              "Handle objections",
+              "Book + create deal",
+            ].map((step, i) => (
+              <li
+                key={step}
+                className="flex items-center gap-3 opacity-0 animate-[fadeUp_0.6s_ease_forwards]"
+                style={{ animationDelay: `${0.15 * i}s` }}
+              >
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-[var(--accent)] text-xs font-sans font-bold text-[var(--ink)]">
+                  {i + 1}
+                </span>
+                {step}
+              </li>
+            ))}
+          </ul>
         </div>
-      </main>
-    </div>
+      </section>
+
+      <section id="floor" className="relative z-10 mx-auto w-full max-w-6xl px-6 pb-24">
+        <SalesWorkspace />
+      </section>
+
+      <style>{`
+        @keyframes fadeUp {
+          from { opacity: 0; transform: translateY(12px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+    </main>
   );
 }

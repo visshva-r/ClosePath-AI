@@ -1,36 +1,96 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ClosePath AI
 
-## Getting Started
+Multi-agent B2B sales assistant that runs a staged workflow:
 
-First, run the development server:
+**Discover -> Qualify (BANT) -> Pitch -> Handle objections -> Close**
+
+Along the way it runs sales tools (lead scoring, product knowledge search, proposal generation, objection logging, meeting booking, deal creation) and writes results into a simple CRM store. A manager dashboard shows funnel metrics, objection breakdown, pipeline value, and a live sync log.
+
+## Features
+
+- Staged sales state machine with live stage indicator
+- BANT scoring and lead profile extraction
+- Multi-category objection handling
+- Live agent reasoner terminal (route / extract / tool / CRM steps)
+- ROI calculator for cloud spend scenarios
+- Proposal one-pager preview on closed-won
+- Manager dashboard with funnel, heatmap, deals, meetings, sync console
+- Works without an API key (deterministic agent). Optional OpenAI polish if configured.
+
+## Quick start
 
 ```bash
+cd Project
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3010](http://localhost:3010)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Surface | Path |
+|---|---|
+| Sales floor | `/` |
+| Manager dashboard | `/dashboard` |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Dev server uses port **3010** by default.
 
-## Learn More
+### Optional LLM polish
 
-To learn more about Next.js, take a look at the following resources:
+```env
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Copy `.env.example` to `.env.local`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Demo walkthrough
 
-## Deploy on Vercel
+1. Open `/dashboard` and reset CRM data if you want a clean slate.
+2. On `/`, click **Play demo step** five times (or type as the prospect).
+3. Watch BANT score, reasoner terminal, and tool chips update.
+4. On close, review the proposal one-pager and confetti state.
+5. Open `/dashboard` for funnel, objections, deals, and sync log.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Architecture
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+Prospect message
+    ->
+Profile extractor -> BANT scorer -> Stage router
+    ->
+Tools: score_lead | search_product_knowledge | generate_proposal
+       log_objection | book_meeting | create_deal
+    ->
+Reasoner terminal + CRM ops log (.data/)
+    ->
+Manager dashboard
+```
+
+### Key files
+
+| File | Role |
+|---|---|
+| `src/lib/agent.ts` | Orchestration, reasoner, tools |
+| `src/lib/scoring.ts` | BANT scoring and stage transitions |
+| `src/lib/product.ts` | Demo product catalog (Atlas Cloud) |
+| `src/lib/store.ts` | Sessions, deals, meetings, ops |
+| `src/components/SalesWorkspace.tsx` | Sales floor UI |
+| `src/components/ManagerDashboard.tsx` | Analytics UI |
+
+## Tech stack
+
+- Next.js (App Router) + TypeScript
+- Tailwind CSS
+- Local JSON persistence under `.data/`
+- Optional OpenAI Chat Completions for reply polish
+
+## Deploy
+
+```bash
+cd Project
+npx vercel --prod
+```
+
+## License / notes
+
+Personal portfolio project. Atlas Cloud / NexusOps names are fictional demo data for the sales simulation.
