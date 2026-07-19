@@ -381,50 +381,6 @@ function craftReply(
   }
 }
 
-async function maybeLlmPolish(
-  draft: string,
-  session: SessionState,
-  userText: string
-): Promise<string> {
-  const key = process.env.OPENAI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-  if (!key) return draft;
-
-  // Optional enhancement - keep deterministic draft as fallback
-  try {
-    if (process.env.OPENAI_API_KEY) {
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-          temperature: 0.4,
-          messages: [
-            {
-              role: "system",
-              content: `You are ClosePath, an elite B2B sales agent for ${PRODUCT.name}. Keep replies under 120 words, confident, specific, no fluff. Preserve any score numbers, plan names, and CTAs from the draft. Stage=${session.stage}.`,
-            },
-            {
-              role: "user",
-              content: `Prospect said: ${userText}\n\nDraft to refine (keep facts):\n${draft}`,
-            },
-          ],
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const text = data.choices?.[0]?.message?.content?.trim();
-        if (text) return text;
-      }
-    }
-  } catch {
-    // fall through to draft
-  }
-  return draft;
-}
-
 export async function handleUserMessage(
   sessionId: string,
   userText: string
@@ -489,7 +445,8 @@ export async function handleUserMessage(
   }
 
   const draft = craftReply(session, stage, userText, tools);
-  const content = await maybeLlmPolish(draft, session, userText);
+  // Deterministic reply only. Gemini/OpenAI polish is opt-in via /api/polish (button click).
+  const content = draft;
 
   const assistantMsg: ChatMessage = {
     id: id(),
@@ -512,4 +469,73 @@ export async function handleUserMessage(
   );
 
   return { session, toolsUsed: tools.map((t) => t.name) };
+}
+
+export async function polishLastAssistantReply(
+  sessionId: string
+): Promise<{ session: SessionState; provider: string }> {
+  const session = getSession(sessionId);
+  if (!session) throw new Error("Session not found");
+
+  let assistantIdx = -1;
+  for (let i = session.messages.length - 1; i >= 0; i--) {
+    if (session.messages[i].role === "assistant") {
+      assistantIdx = i;
+      break;
+    }
+  }
+  if (assistantIdx < 0) throw new Error("No assistant reply to polish");
+
+  let userText = "";
+  for (let i = assistantIdx - 1; i >= 0; i--) {
+    if (session.messages[i].role === "user") {
+      userText = session.messages[i].content;
+      break;
+    }
+  }
+
+  const draft = session.messages[assistantIdx].content;
+  const { polishReplyWithLlm } = await import("./llm");
+  const { text, provider, error } = await polishReplyWithLlm(
+    draft,
+    session,
+    userText
+  );
+
+  if (provider === "none") {
+    throw new Error(
+      error ||
+        "No LLM API key configured. Add GEMINI_API_KEY from Google AI Studio to .env.local and restart npm run dev."
+    );
+  }
+
+  // Never replace a good draft with a broken polish
+  if (!text || text.length < 40) {
+    throw new Error("Gemini polish was incomplete; original reply kept. Try Enhance again.");
+  }
+
+  session.messages[assistantIdx] = {
+    ...session.messages[assistantIdx],
+    content: text,
+    meta: {
+      ...session.messages[assistantIdx].meta,
+      toolsUsed: [
+        ...(session.messages[assistantIdx].meta?.toolsUsed || []),
+        `llm_polish_${provider}`,
+      ].filter((v, i, a) => a.indexOf(v) === i),
+    },
+  };
+  session.reasoner = [
+    ...(session.reasoner || []),
+    {
+      t: now(),
+      kind: "tool" as const,
+      text: `On-demand LLM polish via ${provider}`,
+    },
+  ].slice(-30);
+  session.updatedAt = now();
+  saveSession(session);
+  appendOp("llm_polish", `${provider} refined last assistant reply`);
+
+  return { session, provider };
 }

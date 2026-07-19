@@ -301,6 +301,8 @@ export default function SalesWorkspace() {
   const [showToolsPulse, setShowToolsPulse] = useState(false);
   const [demoStep, setDemoStep] = useState(0);
   const [showProposal, setShowProposal] = useState(false);
+  const [llmReady, setLlmReady] = useState(false);
+  const [polishing, setPolishing] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const pulseStartedAt = useRef(0);
   const celebrated = useRef<string | null>(null);
@@ -321,6 +323,10 @@ export default function SalesWorkspace() {
 
   useEffect(() => {
     startSession();
+    void fetch("/api/polish")
+      .then((r) => r.json())
+      .then((d) => setLlmReady(Boolean(d.configured)))
+      .catch(() => setLlmReady(false));
   }, []);
 
   useEffect(() => {
@@ -382,6 +388,27 @@ export default function SalesWorkspace() {
     send(line);
   }
 
+  async function polishWithGemini() {
+    if (!session || polishing || pending) return;
+    setPolishing(true);
+    setError("");
+    try {
+      const res = await fetch("/api/polish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: session.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Gemini polish failed");
+        return;
+      }
+      setSession(data.session);
+    } finally {
+      setPolishing(false);
+    }
+  }
+
   const demoDone = demoStep >= DEMO_SCRIPT.length;
 
   return (
@@ -408,6 +435,19 @@ export default function SalesWorkspace() {
                 className="rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--ink)] transition hover:brightness-110 disabled:opacity-40"
               >
                 {demoDone ? "Demo complete" : "Play demo step"}
+              </button>
+              <button
+                type="button"
+                onClick={polishWithGemini}
+                disabled={!session || !llmReady || polishing || pending}
+                title={
+                  llmReady
+                    ? "Rewrite the last reply with Gemini (uses API only on click)"
+                    : "Add GEMINI_API_KEY in .env.local to enable"
+                }
+                className="rounded-full border border-[var(--line)] bg-[var(--wash)] px-4 py-2 text-sm text-[var(--ink)] transition hover:brightness-105 disabled:opacity-40"
+              >
+                {polishing ? "Polishing..." : "Enhance with Gemini"}
               </button>
               <button
                 type="button"

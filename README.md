@@ -34,14 +34,23 @@ Open [http://localhost:3010](http://localhost:3010)
 
 Dev server uses port **3010** by default.
 
-### Optional LLM polish
+### Optional LLM polish (click-only)
+
+Works fully **without** an API key. To optionally rewrite the last reply with Gemini:
+
+1. Create a key at [Google AI Studio](https://aistudio.google.com/apikey)
+2. Copy `.env.example` to `.env.local` and set `GEMINI_API_KEY=...`
+3. Restart `npm run dev`
+4. Click **Enhance with Gemini** only when you want a polish (demo pitch/objection replies)
+
+Normal chat and demo steps never call the API, so free-tier usage stays under your control.
 
 ```env
-OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-4o-mini
+GEMINI_API_KEY=your_key_here
+GEMINI_MODEL=gemini-2.5-flash
 ```
 
-Copy `.env.example` to `.env.local`.
+Copy `.env.example` to `.env.local`. The app auto-discovers usable Gemini models via ListModels and skips deprecated IDs.
 
 ## Demo walkthrough
 
